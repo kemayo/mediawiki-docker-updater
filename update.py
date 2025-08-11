@@ -10,7 +10,7 @@ DOCKER_ROOT = '/var/www/html/w'
 
 def docker_cmd(directory, container, *args, verbose=0):
     cmd = [
-        'docker-compose', 'exec',
+        'docker', 'compose', 'exec',
         '-w', os.path.join(DOCKER_ROOT, directory), container
     ]
     cmd.extend(args)
@@ -51,8 +51,9 @@ def update_directory(directory, container, verbose=0):
         # packages that need to build from source will presumably break
         # log.info('npm install') docker_cmd
         # (directory, container, 'npm', 'install')
-    except subprocess.CalledProcessError:
-        print('ERROR: Failed to update %s', directory)
+    except subprocess.CalledProcessError as e:
+        print('ERROR: Failed to update', directory)
+        printif(verbose > 0, e)
 
 
 def main():
