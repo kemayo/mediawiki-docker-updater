@@ -2,6 +2,7 @@
 
 import os
 import sys
+import signal
 import subprocess
 import argparse
 
@@ -146,6 +147,10 @@ def main():
     # Subprocesses write straight to the pipe, so our labels must not sit in a
     # buffer behind them when the output is redirected.
     sys.stdout.reconfigure(line_buffering=True)
+    # Python ignores SIGPIPE and raises instead, which turns "update.py | head"
+    # into a traceback. Restore the default, so the script stops quietly like
+    # any other command in a pipeline.
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
     if args.directory:
         print(f'Changing working directory to {args.directory}')
