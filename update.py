@@ -38,6 +38,38 @@ def has_upstream(directory):
     ).returncode == 0
 
 
+def head(directory):
+    # Empty string in a repo with no commits, which reads as "no change".
+    return subprocess.run(
+        ['git', '-C', directory, 'rev-parse', 'HEAD'],
+        capture_output=True, text=True
+    ).stdout.strip()
+
+
+def changed_between(directory, before, after, path):
+    if not before or before == after:
+        return False
+    changed = subprocess.run(
+        ['git', '-C', directory, 'diff', '--no-ext-diff', '--name-only',
+         f'{before}..{after}', '--', path],
+        capture_output=True, text=True
+    )
+    return bool(changed.stdout.strip())
+
+
+def needs_composer(directory, before, after, force=False):
+    """Whether composer has anything to do in this directory."""
+    # Checked before force, because composer cannot run without a manifest.
+    if not os.path.exists(os.path.join(directory, 'composer.json')):
+        return False
+    if force or not os.path.isdir(os.path.join(directory, 'vendor')):
+        return True
+    # Only sees a manifest which arrived in this run's pull. A composer.json
+    # changed some other way -- a local edit, or a patch checked out earlier --
+    # needs --force-composer.
+    return changed_between(directory, before, after, 'composer.json')
+
+
 def checkouts(parent):
     """Yield the git checkouts directly inside parent."""
     try:
@@ -53,24 +85,25 @@ def checkouts(parent):
             print(f'SKIP: {directory} is not a git checkout')
 
 
-def update_directory(directory, container, verbose=0):
+def update_directory(directory, container, verbose=0, force_composer=False):
     """Update one checkout. Returns False if a command failed."""
     try:
-        # TODO: fetch first and diff composer.json, so composer can be skipped
-        # when the manifest did not change. That is where the runtime goes.
+        before = head(directory)
         if has_upstream(directory):
             printif(verbose > 0, ' > git pull')
             # --ff-only: a merge commit here is never what we want.
             run(['git', '-C', directory, 'pull', '--ff-only'], verbose=verbose)
         else:
             # A patch under review sits on a detached HEAD. Leave it alone, but
-            # still refresh its dependencies.
+            # still consider its dependencies.
             print(f'SKIP: {directory} has no upstream branch, not pulling')
-        if os.path.exists(os.path.join(directory, 'composer.json')):
+        if needs_composer(directory, before, head(directory), force_composer):
             printif(verbose > 0, ' > composer update')
             docker_cmd(
                 directory, container, 'composer', 'update', verbose=verbose
             )
+        else:
+            printif(verbose > 0, ' > composer not needed')
         # npm is not on the container, and is less essential anyway -- it's
         # mostly for dev tools in this ecosystem. Main reason to not run it
         # locally is that if the container's on a different architecture, any
@@ -96,12 +129,16 @@ def main():
 
     This will run relevant commands through the official docker container"""
     ap = argparse.ArgumentParser(
-        usage='wmf-docker-update [-h] [-c CONTAINER] [-v] [directory]',
+        usage='wmf-docker-update [-h] [-c CONTAINER] [-f] [-v] [directory]',
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     ap.add_argument('-c', '--container', default='mediawiki')
+    ap.add_argument(
+        '-f', '--force-composer', action='store_true',
+        help='run composer everywhere, even where nothing appears to need it'
+    )
     ap.add_argument('--verbose', '-v', action='count', default=0)
     ap.add_argument('directory', nargs='?')
     args = ap.parse_args()
@@ -117,13 +154,17 @@ def main():
     failed = []
 
     print('Updating mediawiki')
-    if not update_directory('.', args.container, verbose=args.verbose):
+    if not update_directory(
+        '.', args.container, verbose=args.verbose,
+        force_composer=args.force_composer
+    ):
         failed.append('.')
 
     for directory in [*checkouts('skins'), *checkouts('extensions')]:
         print(f'Updating {directory}')
         if not update_directory(
-            directory, args.container, verbose=args.verbose
+            directory, args.container, verbose=args.verbose,
+            force_composer=args.force_composer
         ):
             failed.append(directory)
 
