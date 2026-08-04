@@ -171,9 +171,11 @@ def main():
     # Still worth running even after failures: whatever did update may need it.
     print('Running maintenance update')
     try:
+        # run.php is the supported entry point since 1.40. Calling the script
+        # directly still works, but warns.
         docker_cmd(
-            '.', args.container, 'php', 'maintenance/update.php', '--quick',
-            verbose=args.verbose
+            '.', args.container, 'php', 'maintenance/run.php', 'update',
+            '--quick', verbose=args.verbose
         )
     except subprocess.CalledProcessError as e:
         print('ERROR: Failed to run maintenance update')
