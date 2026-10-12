@@ -42,13 +42,16 @@ text shows the name `wmf-docker-update`.
 
 ## What the script does
 
-For core, and then for each skin and each extension, the script does two steps:
+For each skin and each extension, the script does two steps:
 
 1. It pulls with `--ff-only`. If the branch has no upstream branch, the script
    does not pull.
-2. It runs `composer update`. It does this only if the pull changed the
-   `composer.json` file, or if the `vendor` directory is absent. The `-f` option
-   makes `composer` run in all directories.
+2. It runs `composer update` if the dependencies are out of date. See
+   [When composer runs](#when-composer-runs).
+
+For core, the script pulls first, before the skins and extensions. It runs
+`composer update` in core last, because `composer.local.json` usually merges the
+`composer.json` files of the skins and extensions into core.
 
 The script does not pull a directory that is not a Git checkout. It tells you
 which directories it does not pull.
@@ -56,6 +59,22 @@ which directories it does not pull.
 At the end, the script runs the MediaWiki update script:
 
     php maintenance/run.php update --quick
+
+## When composer runs
+
+The script runs `composer update` in a directory if one of these files is newer
+than `vendor/composer/installed.json`:
+
+- `composer.json`
+- `composer.local.json`
+- Each file that `composer.local.json` merges with the merge plugin
+
+The script also runs `composer update` if `vendor/composer/installed.json` is
+absent. After a successful run, the script sets the time of that file to now.
+
+Thus the script sees a change from a pull, from a manual pull, from a local edit,
+or from an earlier run that failed. The `-f` option makes `composer` run in all
+directories.
 
 ## If a command fails
 
@@ -66,13 +85,6 @@ The script exits with status 1 if a command failed. If all of the commands are
 successful, the script exits with status 0.
 
 ## Limits
-
-The script finds a change to a `composer.json` file only if the pull supplies
-that change. Use the `-f` option in these two conditions:
-
-- You changed a `composer.json` file yourself.
-- You changed the `composer.local.json` file. Git does not record that file, so
-  the script cannot see the change.
 
 The script does not run `npm install`. The container has no `npm`. Also, if the
 architecture of the container is different from the architecture of your machine,
